@@ -41,6 +41,7 @@ const (
 	addressTemplateIndex
 	decodeTxTemplateIndex
 	richlistTemplateIndex
+	feesstatTemplateIndex
 )
 
 const (
@@ -73,6 +74,7 @@ type explorerDataSource interface {
 	FillAddressTransactions(addrInfo *AddressInfo) error
 	GetTop100Addresses() ([]*dbtypes.TopAddressRow, error)
 	GetChartValue() (*dbtypes.ChartValue, error)
+	GetFeesStat() ([]*dbtypes.FeesStat, error)
 }
 
 type explorerUI struct {
@@ -158,6 +160,33 @@ func (exp *explorerUI) richlist(w http.ResponseWriter, r *http.Request) {
 		Data []*dbtypes.TopAddressRow
 	}{
 		addrHist})
+
+	if err != nil {
+		log.Errorf("Template execute failure: %v", err)
+		http.Redirect(w, r, "/error", http.StatusTemporaryRedirect)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	io.WriteString(w, str)
+}
+
+func (exp *explorerUI) feesstat(w http.ResponseWriter, r *http.Request) {
+
+	data, errH := exp.explorerSource.GetFeesStat()
+
+	if errH != nil {
+		log.Errorf("Unable to get feesstat")
+		http.Redirect(w, r, "/error/", http.StatusTemporaryRedirect)
+		return
+	}
+	log.Error(data)
+	//AddressInfo
+	str, err := templateExecToString(exp.templates[feesstatTemplateIndex], "feesstat", struct {
+		Data  []*dbtypes.FeesStat
+	}{
+		data,
+	 })
 
 	if err != nil {
 		log.Errorf("Template execute failure: %v", err)
@@ -609,12 +638,21 @@ func (exp *explorerUI) reloadTemplates() error {
 		return err
 	}
 
+	feesstatTemplate, err := template.New("feesstat").Funcs(exp.templateHelpers).ParseFiles(
+		exp.templateFiles["feesstat"],
+		exp.templateFiles["extras"],
+	)
+	if err != nil {
+		return err
+	}
+
 	exp.templates[rootTemplateIndex] = explorerTemplate
 	exp.templates[blockTemplateIndex] = blockTemplate
 	exp.templates[txTemplateIndex] = txTemplate
 	exp.templates[addressTemplateIndex] = addressTemplate
 	exp.templates[decodeTxTemplateIndex] = decodeTxTemplate
 	exp.templates[richlistTemplateIndex] = richlistTemplate
+	exp.templates[feesstatTemplateIndex] = feesstatTemplate
 
 	return nil
 }
@@ -670,6 +708,7 @@ func New(dataSource explorerDataSourceLite, primaryDataSource explorerDataSource
 	exp.templateFiles["address"] = filepath.Join("views", "address.tmpl")
 	exp.templateFiles["rawtx"] = filepath.Join("views", "rawtx.tmpl")
 	exp.templateFiles["richlist"] = filepath.Join("views", "richlist.tmpl")
+	exp.templateFiles["feesstat"] = filepath.Join("views", "feesstat.tmpl")
 
 	toInt64 := func(v interface{}) int64 {
 		switch vt := v.(type) {
@@ -825,6 +864,15 @@ func New(dataSource explorerDataSourceLite, primaryDataSource explorerDataSource
 	}
 	exp.templates = append(exp.templates, richlistTemplate)
 
+	feesstatTemplate, err := template.New("feesstat").Funcs(exp.templateHelpers).ParseFiles(
+		exp.templateFiles["feesstat"],
+		exp.templateFiles["extras"],
+	)
+	if err != nil {
+		log.Errorf("Unable to create new html template: %v", err)
+	}
+	exp.templates = append(exp.templates, feesstatTemplate)
+
 	exp.addRoutes()
 
 	wsh := NewWebsocketHub()
@@ -869,6 +917,11 @@ func (exp *explorerUI) addRoutes() {
 	exp.Mux.Get("/ws", exp.rootWebsocket)
 	exp.Mux.Get("/richlist", exp.richlist)
 	exp.Mux.Get("/chartlist", exp.chartlist)
+
+	exp.Mux.Route("/feesstat", func(r chi.Router) {
+		r.Get("/", exp.feesstat)
+		r.Get("/ws", exp.rootWebsocket)
+	})
 
 	exp.Mux.Route("/block", func(r chi.Router) {
 		r.Route("/{blockhash}", func(rd chi.Router) {

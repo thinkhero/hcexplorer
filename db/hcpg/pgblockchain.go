@@ -777,3 +777,40 @@ func (pgb *ChainDB) UpdateSpendingInfoInAllAddresses() (int64, error) {
 
 	return numAddresses, err
 }
+
+// update fees stat
+func (pgb *ChainDB) UpdateFeesStat() {
+	log.Info("Update fees stat")
+	pgb.updateFeesStat()
+	t := time.Tick(time.Minute * 10)
+	for range t {
+		pgb.updateFeesStat()
+	}
+}
+
+func (pgb *ChainDB) updateFeesStat() (err error) {
+	now := time.Now()
+	d, isInit, err := RetrieveFeesStatLastDay(pgb.db)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	dTime := time.Unix(d, 0)
+	startDate := time.Date(dTime.Year(), dTime.Month(), dTime.Day(), 0, 0, 0, 0, time.UTC)
+	if !isInit {
+		startDate = startDate.AddDate(0, 0, 1)
+	}
+	endDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	for day := startDate; endDate.Sub(day) > 0; day = day.AddDate(0, 0, 1) {
+		err = UpdateFeesStatOneDay(pgb.db, day)
+		if err != nil {
+			log.Error(err)
+		}
+	}
+	return
+}
+
+func (pgb *ChainDB) GetFeesStat() ([]*dbtypes.FeesStat, error) {
+	res := RetrieveFeesStat(pgb.db)
+	return res, nil
+}

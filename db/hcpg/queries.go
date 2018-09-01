@@ -13,6 +13,7 @@ import (
 	"github.com/HcashOrg/hcexplorer/db/dbtypes"
 	"github.com/HcashOrg/hcexplorer/db/hcpg/internal"
 	"github.com/lib/pq"
+	"github.com/HcashOrg/hcd/hcutil"
 )
 
 func RetrievePkScriptByID(db *sql.DB, id uint64) (pkScript []byte, err error) {
@@ -973,4 +974,70 @@ func InsertTxns(db *sql.DB, dbTxns []*dbtypes.Tx, checked bool) ([]uint64, error
 	_ = stmt.Close()
 
 	return ids, dbtx.Commit()
+}
+
+// update fees stat
+func RetrieveFeesStatLastDay(db *sql.DB) (d int64, isInit bool, err error) {
+	err = db.QueryRow(`SELECT MAX(time) d FROM fees_stat;`).Scan(&d)
+	if err != nil {
+		err = db.QueryRow(`SELECT MIN(time) d FROM blocks;`).Scan(&d)
+		isInit = true
+		return
+	}
+	return
+}
+
+func UpdateFeesStatOneDay(db *sql.DB, day time.Time) (err error) {
+	startDate := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC)
+	endDate := startDate.AddDate(0 ,0, 1)
+	size, min, max := 0, 0, 0
+	err = db.QueryRow(internal.RetrieveRangeBlockHeightOneDay, startDate.Unix(), endDate.Unix()).Scan(&size, &min, &max)
+	if err != nil {
+		return err
+	}
+	if min < 2 {
+		min = 2
+	}
+	rewards, fees := 0, 0
+	err = db.QueryRow(internal.RetrieveRewardsFeesOneDay, min, max).Scan(&rewards, &fees)
+	if err != nil {
+		return err
+	}
+	feesRewards := float64(fees) / float64(rewards)
+	feesPerkb := hcutil.Amount(fees).ToCoin() / float64(size) * 1000
+	id := 0
+	err = db.QueryRow(internal.InsertFeesStat, startDate.Unix(), fees, rewards, size, feesRewards, feesPerkb).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	err = nil
+	return
+}
+
+// get fees stat
+func RetrieveFeesStat(db *sql.DB) (res []*dbtypes.FeesStat) {
+	rows, err := db.Query(internal.RetrieveLast90FeesStat)
+	if err != nil {
+		log.Error(err)
+		return
+	}
+	for rows.Next() {
+		var timestamp int64
+		var fees int64
+		var feesRewards float64
+		var feesPerkb float64
+		err = rows.Scan(&timestamp, &fees, &feesRewards, &feesPerkb)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		log.Info(timestamp, fees, feesRewards, feesPerkb)
+		stat := dbtypes.FeesStat{
+			Time: time.Unix(timestamp, 0).Format("2006/01/02"),
+			Fees: hcutil.Amount(fees).ToCoin(),
+			FeesRewards: feesRewards * 100,
+			FeesPerkb: feesPerkb}
+		res = append(res, &stat)
+	}
+	return
 }

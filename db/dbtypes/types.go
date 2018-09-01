@@ -186,6 +186,13 @@ type ChartValue struct {
 	SumPercent   []string  `json:"sum_percent"`
 }
 
+type FeesStat struct {
+	Time        string
+	Fees        float64
+	FeesRewards float64
+	FeesPerkb   float64
+}
+
 // ScriptPubKeyData is part of the result of decodescript(ScriptPubKeyHex)
 type ScriptPubKeyData struct {
 	ReqSigs   uint32   `json:"reqSigs"`
