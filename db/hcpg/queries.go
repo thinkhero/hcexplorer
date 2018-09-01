@@ -400,6 +400,44 @@ func scanTopAddressQueryRows(rows *sql.Rows) (ids []uint64, addressRows []*dbtyp
 	}
 	return
 }
+func RetrieveBlocksizejson(db *sql.DB, N, offset int64) ([]uint64, *dbtypes.BlocksizeJson, error) {
+	//now := time.Now()
+	//before90day := strconv.FormatInt(24*day,10)
+	//d, _ := time.ParseDuration("-"+before90day+"h")  //24h*90
+	//d1 := now.Add(d)
+
+	rowsAll, err := db.Query("select sum(size) as totalsize,ROUND(avg(size),0) as avgsize,sum(numtx) as txsum,to_char(to_timestamp(time),'yyyy-MM-dd') as date  from blocks  group by date ORDER BY date")
+	if err != nil {
+		return nil, nil, nil
+	}
+	log.Info(rowsAll)
+	defer func() {
+		if e := rowsAll.Close(); e != nil {
+			log.Errorf("Close of Query failed: %v", e)
+		}
+	}()
+	return scanBlocksizeRows(rowsAll)
+}
+	func scanBlocksizeRows(rows *sql.Rows) (ids []uint64, blocksizejson *dbtypes.BlocksizeJson, err error) {
+	blocksizejsons := &dbtypes.BlocksizeJson{make([]int64, 0), make([]int64, 0), make([]int64, 0), make([]string, 0)}
+	for rows.Next() {
+		var blocksize dbtypes.Blocksize
+
+		err1 := rows.Scan(&blocksize.TotalSize, &blocksize.AvgSize, &blocksize.TotalTx, &blocksize.Date)
+		if err1 != nil {
+			fmt.Println(err1)
+			return
+		}
+		log.Info(blocksize)
+		blocksizejsons.TotalSize = append(blocksizejsons.TotalSize, blocksize.TotalSize)
+		blocksizejsons.AvgSize = append(blocksizejsons.AvgSize, blocksize.AvgSize)
+		blocksizejsons.TotalTx = append(blocksizejsons.TotalTx, blocksize.TotalTx)
+		blocksizejsons.Date = append(blocksizejsons.Date, blocksize.Date)
+		log.Info(blocksizejson)
+	}
+	blocksizejson = blocksizejsons
+	return
+}
 
 func retrieveAddressTxns(db *sql.DB, address string, N, offset int64,
 	statement string) ([]uint64, []*dbtypes.AddressRow, error) {
