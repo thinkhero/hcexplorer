@@ -197,6 +197,12 @@ type BlocksizeJson struct {
 	TotalTx   []int64  `json:totaltx`
 	Date      []string `json:date`
 }
+type FeesStat struct {
+	Time        string
+	Fees        float64
+	FeesRewards float64
+	FeesPerkb   float64
+}
 
 // ScriptPubKeyData is part of the result of decodescript(ScriptPubKeyHex)
 type ScriptPubKeyData struct {
